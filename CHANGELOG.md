@@ -6,6 +6,75 @@ Every release of Cubeship, newest first.
      there and run `make changelog`; editing this file is editing the
      copy rather than the thing. -->
 
+## 0.14.0 — 2026-11-19
+
+Rollbacks, app ports and readiness checks, GHCR packages your credentials reach, a way back in for a locked-out admin, and a simpler dashboard.
+
+### Added
+
+**Roll an app back to an earlier deployment.** A rollback deploys again the
+image tag, or the Git commit, of an earlier deployment that succeeded. It goes
+through the same health check and swap as any deploy, with the app's current
+environment, and the old container keeps serving until the new one is
+healthy. It is available from the app's deployments in the dashboard, with
+`cubeship app rollback <app> <deployment-id>`, through the `rollback_app` MCP
+tool and at `POST /api/apps/{project}/{env}/{name}/deployments/{id}/rollback`.
+
+**App networking and readiness.** Networking settings let an app declare its
+internal container ports and several HTTP health checks, each with a path,
+port, initial delay, period, timeout and success and failure thresholds. Every
+check must reach its success threshold before a new container is considered
+ready; reaching a failure threshold fails that deployment. Traefik uses the
+first check for ongoing monitoring. Declared ports appear in Overview, and a
+domain with no explicit port uses the app's only declared port when there is
+one. `PUT /api/apps/{project}/{env}/{name}/networking` and the
+`configure_app_networking` MCP tool expose the settings.
+
+**Templates can configure app networking.** A template can declare an app's
+internal ports and HTTP readiness checks. The catalog validates them,
+installations apply them on create and update, and a failed update restores
+the app's prior networking. The Jian template checks the gateway at `/health`
+on port `4310` and the panel at `/web/health` on port `3000`.
+
+**GHCR packages your credentials reach.** Registry pages list packages owned
+by the authenticated user and the organizations their credential can access,
+instead of filtering a truncated global listing. Build image selectors preload
+those repositories and tags; a public image can still be chosen by its exact
+name. Git repositories and branches preload when entering Build.
+
+**Named template installations.** An installation's name is a prefix for the
+resources its template creates, and is shown as the installation's identity.
+
+**A way back in for a locked-out admin.** On the server,
+`docker exec cubeship-daemon cubeshipd -reset-password <username>` issues a new
+password and prints it once. It is for the admin who forgot their own
+password with no other admin to reset it. As with a reset from the Users
+screen, the API keys keep working and every session is signed out.
+
+### Changed
+
+**A simpler dashboard.** The sidebar is a flat list in four groups instead of
+a branched menu. Projects, databases and object storage drop their side
+column: their lists follow the containers page, with filters, search and
+actions on each row, and their detail pages have a header with status and
+actions above tabs. The theme has rounder corners, fewer borders and larger
+page titles.
+
+### Fixed
+
+**Redeploying an older commit builds the right image.** Built images are
+named for their branch, so a commit whose image a newer build replaced is
+built again instead of reusing the wrong image.
+
+### Upgrade notes
+
+Stable installs and automatic stable updates now use 0.14.0. The daemon
+applies migrations when it starts. Existing domain and TCP ports become
+internal port declarations, and a legacy health path becomes a health check on
+its existing effective port, or 8080 when none was configured. Template
+installations keep their resources; opening one with no name asks for one
+once, and naming it renames nothing.
+
 ## 0.14.0-rc.3 — 2026-11-16
 
 *Prerelease.*
