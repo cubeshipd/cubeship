@@ -280,6 +280,18 @@ func (s *Service) ResetPassword(ctx context.Context, caller *User, username stri
 	if err := Require(caller, RoleAdmin); err != nil {
 		return "", err
 	}
+	return s.RecoverPassword(ctx, username)
+}
+
+// RecoverPassword is ResetPassword with nobody signed in to ask for it:
+// what `cubeshipd -reset-password` runs on the host, for the admin who
+// has forgotten their own password and has no other admin to reset it.
+//
+// **The host is what authorizes it, so nothing else may call it.** Who
+// can run a command in the daemon's container already holds the Docker
+// socket and the database's password; never reach this from the API or
+// MCP, where it would be a password reset for anyone who asked.
+func (s *Service) RecoverPassword(ctx context.Context, username string) (string, error) {
 	target, err := s.Repo().ByUsername(ctx, username)
 	if err != nil {
 		return "", ErrNoSuchUser

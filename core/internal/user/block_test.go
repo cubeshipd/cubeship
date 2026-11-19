@@ -1,12 +1,15 @@
 package user_test
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"cubeship/internal/server/servertest"
+	"cubeship/internal/user"
 )
 
 // add creates an account through the API and returns its password.
@@ -133,6 +136,35 @@ func TestResettingAPasswordKeepsTheKeysAndEndsTheSessions(t *testing.T) {
 
 	// And the password it handed over is the one that works now.
 	f.Login(t, "ana", issued.Password)
+}
+
+// **An admin who forgot their own password gets back in from the host**,
+// with nobody signed in to ask: what `cubeshipd -reset-password` runs.
+// Same rules as an admin's reset — the keys stay, the sessions end.
+func TestRecoveringAPasswordOnTheHostNeedsNobodySignedIn(t *testing.T) {
+	f := servertest.New(t)
+	password := add(t, f, "ana", "admin")
+	session := f.Login(t, "ana", password)
+	key := issueKey(t, f, session)
+
+	recovered, err := f.Server.Users.RecoverPassword(context.Background(), "ana")
+	if err != nil {
+		t.Fatalf("RecoverPassword: %v", err)
+	}
+	if recovered == "" || recovered == password {
+		t.Fatal("the recovery handed back nothing, or the password it replaced")
+	}
+
+	servertest.RequireStatus(t, f.Do(t, http.MethodGet, "/users/me", nil, key), http.StatusOK)
+	servertest.RequireStatus(t, f.DoAs(t, http.MethodGet, "/users/me", nil, session),
+		http.StatusUnauthorized)
+	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/auth/login",
+		map[string]string{"username": "ana", "password": password}, ""), http.StatusUnauthorized)
+	f.Login(t, "ana", recovered)
+
+	if _, err := f.Server.Users.RecoverPassword(context.Background(), "nobody"); !errors.Is(err, user.ErrNoSuchUser) {
+		t.Fatalf("an unknown account: got %v, want ErrNoSuchUser", err)
+	}
 }
 
 // **Neither of these can be aimed at yourself**, and between them and

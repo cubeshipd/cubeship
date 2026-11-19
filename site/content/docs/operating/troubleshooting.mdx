@@ -9,6 +9,17 @@ Something else is listening. The daemon publishes 3000 until the
 instance has a domain, and the installer refuses rather than fighting
 whatever is there. Free the port, or install with another.
 
+## Nobody can sign in as an admin
+
+The only admin forgot the password. On the server:
+
+```bash
+docker exec cubeship-daemon cubeshipd -reset-password <username>
+```
+
+It prints a new password once. See
+[Users and access](/docs/users#an-admin-who-forgot-their-password).
+
 ## A name has no certificate
 
 **Certificates** under Platform says why, per name:

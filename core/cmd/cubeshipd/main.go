@@ -69,6 +69,7 @@ func main() {
 	// started by the daemon it is about to replace. See replaceDaemon.
 	replace := flag.String("replace", "", "replace this container with a new image and exit")
 	replaceImage := flag.String("replace-image", "", "the image to replace it with")
+	resetPasswordFor := flag.String("reset-password", "", "issue a new password for this account, print it and exit")
 	flag.Parse()
 	if *probe != "" {
 		if err := dockerx.RunProbe(context.Background(), *probe, *probeAddress, *probePath); err != nil {
@@ -80,6 +81,13 @@ func main() {
 	if *showVersion {
 		fmt.Printf("cubeshipd %s\n", version)
 		os.Exit(0)
+	}
+	if *resetPasswordFor != "" {
+		if err := resetPassword(*resetPasswordFor, os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
 	}
 
 	if *replace != "" {
