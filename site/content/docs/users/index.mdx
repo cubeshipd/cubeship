@@ -54,6 +54,21 @@ inside the transaction so two admins cannot take each other's role in
 the same moment. You also cannot delete the account you are signed in
 as.
 
+## An admin who forgot their password
+
+Another admin issues a new one from the Users screen. When there is no
+other admin, issue it on the server itself:
+
+```bash
+docker exec cubeship-daemon cubeshipd -reset-password <username>
+```
+
+It prints a new password once, with the same rules as the Users
+screen: the API keys keep working and every session is signed out.
+What authorizes it is a shell on the server, which already holds the
+Docker socket and the database's password. Only versions that have the
+flag accept it: [upgrade](/docs/operating/upgrading) first.
+
 ## 401 and 403
 
 - **401** — nobody is signed in.

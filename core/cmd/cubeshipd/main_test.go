@@ -1,9 +1,13 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"cubeship/internal/platform/bootstrap"
+	"cubeship/internal/platform/config"
 )
 
 // The daemon generates a few secrets for itself on first start and reuses
@@ -53,5 +57,35 @@ func TestLoadOrCreateSecretReplacesAnEmptyFile(t *testing.T) {
 	}
 	if secret == "" {
 		t.Fatal("an empty file was accepted as the secret")
+	}
+}
+
+// -reset-password reaches the database the daemon already uses, and
+// must never mint a Postgres password of its own doing so: the daemon
+// would start with it next time and stop matching its database.
+func TestResetPasswordFindsTheDaemonsDatabaseAndCreatesNothing(t *testing.T) {
+	external := &config.Config{DataDir: t.TempDir(), DatabaseURL: "postgres://elsewhere/db"}
+	if dsn, err := databaseURL(external); err != nil || dsn != external.DatabaseURL {
+		t.Fatalf("external database: got %q, %v", dsn, err)
+	}
+
+	cfg := &config.Config{DataDir: t.TempDir(), InContainer: true}
+	path := filepath.Join(cfg.DataDir, pgPasswordFileName)
+	if _, err := databaseURL(cfg); err == nil {
+		t.Fatal("no password file was accepted")
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("a password file was created: %v", err)
+	}
+
+	if err := os.WriteFile(path, []byte("s3cret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dsn, err := databaseURL(cfg)
+	if err != nil {
+		t.Fatalf("databaseURL: %v", err)
+	}
+	if want := bootstrap.PostgresDSN(cfg, "s3cret"); dsn != want {
+		t.Fatalf("got %q, want %q", dsn, want)
 	}
 }
