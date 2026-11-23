@@ -317,6 +317,43 @@ func (r *Repository) ByID(ctx context.Context, id int64) (*App, error) {
 	return a, r.attach(ctx, []*App{a})
 }
 
+// The deploy token is not in `columns` on purpose: everything that reads
+// an app reads those, and a secret in the struct every response is built
+// from is a secret one forgotten field away from a listing.
+
+// AppIDByDeployToken is which app a deploy webhook names. The lookup is
+// the unique index, so an unknown token costs what a known one does.
+func (r *Repository) AppIDByDeployToken(ctx context.Context, token string) (int64, error) {
+	var id int64
+	err := r.q.QueryRowContext(ctx, `SELECT id FROM apps WHERE deploy_token = $1`, token).Scan(&id)
+	if err != nil {
+		return 0, fmt.Errorf("get app by deploy token: %w", err)
+	}
+	return id, nil
+}
+
+func (r *Repository) DeployToken(ctx context.Context, appID int64) (string, error) {
+	var token string
+	err := r.q.QueryRowContext(ctx, `SELECT deploy_token FROM apps WHERE id = $1`, appID).Scan(&token)
+	if err != nil {
+		return "", fmt.Errorf("get deploy token of app %d: %w", appID, err)
+	}
+	return token, nil
+}
+
+// RotateDeployToken replaces the token with a fresh one from the
+// column's own default, so there is one generator and it is the one
+// every app was created with.
+func (r *Repository) RotateDeployToken(ctx context.Context, appID int64) (string, error) {
+	var token string
+	err := r.q.QueryRowContext(ctx,
+		`UPDATE apps SET deploy_token = DEFAULT WHERE id = $1 RETURNING deploy_token`, appID).Scan(&token)
+	if err != nil {
+		return "", fmt.Errorf("rotate deploy token of app %d: %w", appID, err)
+	}
+	return token, nil
+}
+
 // Delete removes an app and the deployment history that points at it.
 // The caller is responsible for the container first — a row deleted
 // while its container runs leaves something serving traffic that nothing
