@@ -270,23 +270,47 @@ func (s *Service) TagsFor(ctx context.Context, caller *user.User, image string) 
 		return nil, fmt.Errorf("name the image to list tags for")
 	}
 
-	c, found, err := s.ForImage(ctx, image)
+	c, _, err := s.ForImage(ctx, image)
 	if err != nil {
 		return nil, err
 	}
-	client := s.client
-	if !found {
+	return s.tagsWith(ctx, c, image, repository)
+}
+
+// tagsWith lists a repository's tags through the login held for its
+// registry, or anonymously when c is nil.
+//
+// A login the registry refuses falls back to an anonymous listing. The
+// stored login says nothing about the image being asked for: a GHCR
+// token without package scope, or one for another account, is refused
+// at the token server even for a public package that answers anyone.
+// Failing the listing there left the tag field empty for an image that
+// was perfectly listable. A private repository is refused anonymously
+// too, and then it is the login's refusal that is reported — that is
+// the thing to fix.
+func (s *Service) tagsWith(ctx context.Context, c *Credential, image, repository string) ([]Image, error) {
+	if c == nil {
 		// No login, which is not a failure: a public repository answers
 		// an anonymous token request, and the v2 client already asks
 		// for one when it holds no password.
-		c = &Credential{Host: HostOf(image), Provider: ProviderGeneric}
-		client = s.publicClient
+		return s.listTags(ctx, s.publicClient, &Credential{Host: HostOf(image), Provider: ProviderGeneric}, repository)
 	}
+	images, err := s.listTags(ctx, s.client, c, repository)
+	if c.Provider == ProviderGeneric && errors.Is(err, errUnauthorized) {
+		anonymous := &Credential{Host: c.Host, Provider: ProviderGeneric}
+		if images, anonErr := s.listTags(ctx, s.publicClient, anonymous, repository); anonErr == nil {
+			return images, nil
+		}
+	}
+	return images, err
+}
+
+func (s *Service) listTags(ctx context.Context, client *http.Client, c *Credential, repository string) ([]Image, error) {
 	switch c.Provider {
 	case ProviderAWS:
-		return listECRImages(ctx, s.client, c, repository)
+		return listECRImages(ctx, client, c, repository)
 	case ProviderDigitalOcean:
-		return listDOImages(ctx, s.client, c, repository)
+		return listDOImages(ctx, client, c, repository)
 	}
 	return listV2ImagesWithDates(ctx, client, c, repository)
 }
