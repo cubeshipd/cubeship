@@ -1033,7 +1033,9 @@ const routes: [string, string, Handler][] = [
     () => images.map(({ pushed_at, ...image }) => ({ ...image, created_at: pushed_at })),
   ],
   ["GET", "/registry/usage", () => usage],
-  ["GET", "/registries/tags", () => ({ tags: ["v1.4.0", "v1.3.2", "latest"] })],
+  // An image's tags are a list of images, the shape the field sorts and
+  // chooses from — not an object holding names.
+  ["GET", "/registries/tags", () => images],
   ["GET", "/registries/:id", (p) => row(db.registries, "id", p[0])],
   ["GET", "/registries/:id/repositories", () => repositories],
   ["GET", "/registries/:id/images", () => images],
