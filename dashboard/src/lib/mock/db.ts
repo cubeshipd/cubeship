@@ -509,6 +509,37 @@ export const db = {
       limits: { cpu: 0, memory: 0 },
       autoscale: { min: 0, max: 0, cpu: 0 },
     },
+    {
+      // A public image from a registry this instance holds no login for.
+      reference: "internal/production/keycloak",
+      name: "keycloak",
+      project: "internal",
+      environment: "production",
+      source: "external",
+      image: "quay.io/keycloak/keycloak",
+      tag: "26.1",
+      status: "running",
+      has_container: true,
+      internal_ports: [],
+      domains: [],
+      internal_host: "cubeship-internal-production-keycloak",
+      nodes: ["worker-1"],
+      replicas: [
+        {
+          node: "worker-1",
+          ordinal: 0,
+          status: "running",
+          deployment_id: 39,
+          container_name: "cubeship-internal-production-keycloak-39-0",
+        },
+      ],
+      scale: 1,
+      spread: false,
+      split: false,
+      address: "203.0.113.42",
+      limits: { cpu: 0, memory: 0 },
+      autoscale: { min: 0, max: 0, cpu: 0 },
+    },
   ] as Row[],
 
   deployments: {

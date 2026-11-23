@@ -30,13 +30,32 @@ something you ask for — from the dashboard, with `cubeship app deploy`,
 or through the `deploy_app` tool, which is exactly what a CI job does
 after it pushes.
 
+## Public images
+
+A public image works from any registry, with nothing connected: the
+reference names where it lives, and the pull is anonymous. `ghcr.io/acme/api`,
+`quay.io/keycloak/keycloak`, `registry.gitlab.com/acme/api`,
+`public.ecr.aws/nginx/nginx` and a bare `nginx` all run the same way.
+
+In the dashboard, choose **Public image (any registry)** as the registry
+and type the full reference. Typing a reference that names another
+registry moves the choice for you, and keeps what you typed. The tags are
+listed from the registry anonymously, and a field you type into is the
+fallback when it will not list them.
+
 ## Private images
 
 A private image needs a login, which is an
 [external registry](/docs/registries) connected to the instance with a
-[credential](/docs/credentials). Docker Hub, GHCR, ECR and DigitalOcean's
-registry are the ones the dashboard knows how to browse; ECR logins are
-minted from the credential on every pull, since its tokens expire.
+[credential](/docs/credentials). Connecting one is only needed for a
+private image, or to browse a registry's repositories in the dashboard:
+Docker Hub, GHCR, ECR and DigitalOcean's registry are the ones it knows
+how to browse; ECR logins are minted from the credential on every pull,
+since its tokens expire.
+
+A login the registry refuses does not hide a public image. Listing tags
+tries the login first and then asks anonymously, so a token without
+package access still lists a public GHCR image.
 
 The dashboard picks the image from the registry's own catalogue when it
 has one. Docker Hub has no public catalogue, so an image there is typed.

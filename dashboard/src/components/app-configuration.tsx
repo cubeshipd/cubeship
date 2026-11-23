@@ -11,7 +11,7 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { ErrorAlert } from "@/components/error-alert";
 import { GitSource } from "@/components/git-source";
 import { GlideSelect } from "@/components/glide-select";
-import { CUBESHIP, ImageSource, type ImageSourceValue } from "@/components/image-source";
+import { ImageSource, type ImageSourceValue } from "@/components/image-source";
 import { Notice } from "@/components/notice";
 import { ResourceLimitFields } from "@/components/resource-limit-fields";
 import { SectionHeader } from "@/components/section-header";
@@ -38,6 +38,7 @@ import {
   type Settings as InstanceSettings,
 } from "@/lib/api";
 import { message } from "@/lib/errors";
+import { CUBESHIP, hostOf } from "@/lib/image-registry";
 
 // The daemon has four sources. There are only two things an app can be:
 // something this instance builds, or something someone else already
@@ -918,14 +919,4 @@ function originProblem(source: AppSource, o: { repo: string; image: string }): s
     }
   }
   return null;
-}
-
-// hostOf is which registry an image reference names, in the spelling the
-// daemon uses: a reference with no registry in it at all is Docker Hub's.
-function hostOf(image: string): string {
-  const first = image.split("/")[0] ?? "";
-  if (!image.includes("/") || (!/[.:]/.test(first) && first !== "localhost")) {
-    return "index.docker.io";
-  }
-  return first.toLowerCase();
 }

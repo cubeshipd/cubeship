@@ -18,6 +18,7 @@ import {
   registryCredentialsKey,
   registryRepositoriesKey,
 } from "@/lib/build-data";
+import { CUBESHIP, DOCKER_HUB, entryFor, entryForTyped, PUBLIC_IMAGE } from "@/lib/image-registry";
 import { selectableImageTags } from "@/lib/image-tags";
 
 // Where a published image comes from: which registry, which image in it,
@@ -37,17 +38,16 @@ import { selectableImageTags } from "@/lib/image-tags";
 // break the webhook, which matches a pushed repository to an app by its
 // reference and nothing else.
 
-// CUBESHIP is the reserved key for the registry this instance runs, the
-// same word its id takes everywhere else.
-export const CUBESHIP = "cubeship";
-
-// DOCKER_HUB is where an image with no registry in its name comes from,
-// and it is offered whether or not anything is connected: a public image
-// needs no login, which is the one thing a fresh install can run.
-const DOCKER_HUB = "index.docker.io";
+// Docker Hub and "Public image" are offered whether or not anything is
+// connected: a public image needs no login, wherever it is published,
+// which is the one thing a fresh install can run. The second is not a
+// registry but the rest of them — the image names its own — so the list
+// stays as long as the registries this instance has a login for.
 
 export type ImageSourceValue = {
-  // Registry is CUBESHIP, or the host of the registry to pull from.
+  // Registry is CUBESHIP, PUBLIC_IMAGE, or the host of the registry to
+  // pull from. A host this instance holds no login for is shown as
+  // PUBLIC_IMAGE, so an app saved with one still opens on a real choice.
   registry: string;
   // Image is the full reference without a tag, empty on Cubeship's own.
   image: string;
@@ -80,9 +80,11 @@ export function ImageSource({
     staleTime: buildDataStaleTime,
   });
 
-  const onCubeship = value.registry === CUBESHIP;
   const connected = registriesQuery.data ?? [];
-  const picked = connected.find((r) => r.host === value.registry);
+  const hosts = connected.map((r) => r.host);
+  const registry = entryFor(value.registry, hosts);
+  const onCubeship = registry === CUBESHIP;
+  const picked = connected.find((r) => r.host === registry);
 
   // Docker Hub is in the list once: as the connected account when there
   // is one, and as itself when there is not.
@@ -92,6 +94,7 @@ export function ImageSource({
     ...(connected.some((r) => r.host === DOCKER_HUB)
       ? []
       : [{ value: DOCKER_HUB, label: "Docker Hub" }]),
+    { value: PUBLIC_IMAGE, label: "Public image (any registry)" },
   ];
 
   return (
@@ -101,7 +104,7 @@ export function ImageSource({
         <SearchableSelect
           label="Registry"
           choices={choices}
-          value={value.registry}
+          value={registry}
           busy={registriesQuery.isPending}
           onChange={(registry) =>
             // The image and the tag belong to the registry that was left,
@@ -125,9 +128,14 @@ export function ImageSource({
       ) : (
         <ImageField
           registryID={picked?.id}
-          host={value.registry}
+          host={registry}
           value={value.image}
-          onChange={(image) => onChange({ ...value, image, tag: "" })}
+          // An image typed with another registry's name in it moves the
+          // select there, and keeps what was typed: the reference is the
+          // thing somebody means, and the select only has to agree.
+          onChange={(image) =>
+            onChange({ registry: entryForTyped(image, registry, hosts), image, tag: "" })
+          }
         />
       )}
 
@@ -159,6 +167,25 @@ export function ImageSource({
       )}
     </div>
   );
+}
+
+// imagePlaceholder shows the shape of a reference for the registry
+// chosen; the public entry has no registry to borrow a host from, so it
+// shows one that is not Docker Hub's.
+function imagePlaceholder(host: string): string {
+  if (host === DOCKER_HUB) return "nginx";
+  if (host === PUBLIC_IMAGE) return "ghcr.io/owner/image or quay.io/org/image";
+  return host === "ghcr.io" ? "ghcr.io/owner/image" : `${host}/acme/api`;
+}
+
+function imageHint(host: string): string | undefined {
+  if (host === PUBLIC_IMAGE) {
+    return "Any public image, from any registry — no login needed. Connect the registry under Registries only for a private one.";
+  }
+  if (host === "ghcr.io") {
+    return "Suggestions show packages this login can access. Type an exact public image path to use another GHCR package.";
+  }
+  return undefined;
 }
 
 function registryLabel(r: RegistryCredential): string {
@@ -199,36 +226,29 @@ function ImageField({
     (repositoriesQuery.isPending || repos.length > 0);
   const full = (name: string) => (host === DOCKER_HUB ? name : `${host}/${name}`);
 
-  if (host === "ghcr.io") {
+  const ghcr = host === "ghcr.io";
+  if (ghcr || !listable) {
+    // One shape for both, so the input is the same element when typing
+    // moves the registry between them and it keeps its focus.
     return (
       <>
         <TextField
           label="Image"
           value={value}
           spellCheck={false}
-          list={suggestionsID}
+          list={ghcr ? suggestionsID : undefined}
           onChange={(e) => onChange(e.target.value)}
-          placeholder="ghcr.io/owner/image"
-          hint="Suggestions show packages this login can access. Type an exact public image path to use another GHCR package."
+          placeholder={imagePlaceholder(host)}
+          hint={imageHint(host)}
         />
-        <datalist id={suggestionsID}>
-          {repos.map((repo) => (
-            <option key={repo.name} value={full(repo.name)} />
-          ))}
-        </datalist>
+        {ghcr && (
+          <datalist id={suggestionsID}>
+            {repos.map((repo) => (
+              <option key={repo.name} value={full(repo.name)} />
+            ))}
+          </datalist>
+        )}
       </>
-    );
-  }
-
-  if (!listable) {
-    return (
-      <TextField
-        label="Image"
-        value={value}
-        spellCheck={false}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={host === DOCKER_HUB ? "nginx" : `${host}/acme/api`}
-      />
     );
   }
 
