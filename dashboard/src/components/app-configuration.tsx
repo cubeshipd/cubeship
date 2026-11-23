@@ -3,6 +3,7 @@
 import { XIcon } from "lucide-react";
 import { useCallback, useEffect, useId, useState } from "react";
 import { ActionButton } from "@/components/action-button";
+import { AppDeployHook } from "@/components/app-deploy-hook";
 import { AppNetwork } from "@/components/app-network";
 import { AppNetworkingSettings } from "@/components/app-networking-settings";
 import { AppTCPPorts } from "@/components/app-tcp-ports";
@@ -103,6 +104,7 @@ export function AppConfiguration({
       {section === "build" && (
         <div className="space-y-6">
           <SourceSection app={app} onSaved={onAppChange} onError={setError} />
+          <AppDeployHook app={app} />
           <PredeploySection app={app} onSaved={onAppChange} onError={setError} />
           <StopPolicySection app={app} onSaved={onAppChange} onError={setError} />
         </div>

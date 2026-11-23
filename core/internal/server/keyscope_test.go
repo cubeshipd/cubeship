@@ -60,6 +60,9 @@ func TestEveryRecordedRouteHasASentence(t *testing.T) {
 		"POST /mcp": true, "GET /mcp": true, "DELETE /mcp": true,
 		"POST /hooks/github": true, "POST /hooks/registry": true,
 		"POST /hooks/gitremotes/{id}": true,
+		// Recorded by its handler, as app.HookAction, because this
+		// pattern's one wildcard is the secret.
+		"POST /hooks/deploy/{token}":  true,
 		"POST /nodes/agent/reconcile": true, "POST /nodes/agent/results/{id}": true,
 	}
 	for _, p := range append(f.Server.Patterns(), f.Server.InternalPatterns()...) {

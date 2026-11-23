@@ -24,13 +24,13 @@ func NewTools(svc *Service, caller *user.User) *Tools {
 func (t *Tools) Register(srv *mcp.Server) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "list_audit_events",
-		Description: "Read the audit log, newest first: who changed what, through the dashboard, the API or MCP, and every refused attempt. Filter by user, via (dashboard, api, mcp), outcome (ok, refused, failed) or target (e.g. an app's reference). Pass the returned next as before for older events. Requires the admin role.",
+		Description: "Read the audit log, newest first: who changed what, through the dashboard, the API, MCP or a deploy webhook, and every refused attempt. Filter by user, via (dashboard, api, mcp, webhook), outcome (ok, refused, failed) or target (e.g. an app's reference). Pass the returned next as before for older events. Requires the admin role.",
 	}, t.list)
 }
 
 type listInput struct {
 	User    string `json:"user,omitempty" jsonschema:"only this username"`
-	Via     string `json:"via,omitempty" jsonschema:"dashboard, api or mcp"`
+	Via     string `json:"via,omitempty" jsonschema:"dashboard, api, mcp or webhook"`
 	Outcome string `json:"outcome,omitempty" jsonschema:"ok, refused or failed"`
 	Target  string `json:"target,omitempty" jsonschema:"only events whose target contains this"`
 	From    string `json:"from,omitempty" jsonschema:"only events at or after this: RFC 3339, or YYYY-MM-DD for midnight UTC"`

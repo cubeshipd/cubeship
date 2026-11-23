@@ -329,7 +329,7 @@ func newAppCmd() *cobra.Command {
 	}
 
 	appCmd.AddCommand(createCmd, listCmd, getCmd, deployCmd, deploymentsCmd, deleteCmd, logsCmd, newAppShellCmd(),
-		newAppPlaceCmd(), newAppLimitsCmd(), newAppAutoscaleCmd(), predeployCmd, cancelCmd, rollbackCmd, appEnvCommands(), newAppVolumeCmd(), newAppTCPCmd())
+		newAppPlaceCmd(), newAppLimitsCmd(), newAppAutoscaleCmd(), predeployCmd, cancelCmd, rollbackCmd, appEnvCommands(), newAppVolumeCmd(), newAppTCPCmd(), newAppHookCmd())
 	return appCmd
 }
 

@@ -245,6 +245,8 @@ func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) 
 	r.Handle("POST "+appPath+"/stop", auth(http.HandlerFunc(h.stop)))
 	r.Handle("POST "+appPath+"/start", auth(http.HandlerFunc(h.start)))
 	r.Handle("POST "+appPath+"/deploy", auth(http.HandlerFunc(h.deploy)))
+	r.Handle("GET "+appPath+"/deploy-hook", auth(http.HandlerFunc(h.getDeployHook)))
+	r.Handle("POST "+appPath+"/deploy-hook/rotate", auth(http.HandlerFunc(h.rotateDeployHook)))
 	r.Handle("GET "+appPath+"/deployments", auth(http.HandlerFunc(h.deployments)))
 	r.Handle("GET "+appPath+"/deployments/{id}", auth(http.HandlerFunc(h.deployment)))
 	r.Handle("DELETE "+appPath+"/deployments/{id}", auth(http.HandlerFunc(h.deleteDeployment)))
@@ -306,6 +308,7 @@ func WriteError(w http.ResponseWriter, err error) {
 	case errors.Is(err, ErrUnknownSource), errors.Is(err, ErrImageRequired),
 		errors.Is(err, ErrImageNotAllowed), errors.Is(err, ErrImageCarriesTag),
 		errors.Is(err, ErrTagNotAllowed), errors.Is(err, ErrInvalidTag),
+		errors.Is(err, ErrRefNotAllowed), errors.Is(err, ErrInvalidRef),
 		errors.Is(err, ErrRepoRequired), errors.Is(err, ErrRepoNotAllowed),
 		errors.Is(err, ErrRepoNotSupported), errors.Is(err, ErrDockerfileNotAllowed):
 		http.Error(w, err.Error(), http.StatusBadRequest)

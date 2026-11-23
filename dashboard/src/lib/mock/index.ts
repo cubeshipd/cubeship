@@ -465,6 +465,8 @@ const routes: [string, string, Handler][] = [
       return row;
     },
   ],
+  ["GET", "/apps/:a/:b/:c/deploy-hook", (p) => deployHook(p.join("/"))],
+  ["POST", "/apps/:a/:b/:c/deploy-hook/rotate", (p) => deployHook(p.join("/"), true)],
   ["GET", "/apps/:a/:b/:c/logs", () => sampleLog],
   ["GET", "/apps/:a/:b/:c/metrics", () => containerSeries(24, 512 * 1024 * 1024)],
   ["GET", "/apps/:a/:b/:c/domains", (p) => appOr404(p.join("/")).domains],
@@ -1457,6 +1459,21 @@ const mockVolumes: Record<string, Row[]> = {
 // Published TCP ports, by app reference. None to begin with: an app
 // reached over something other than HTTP is the exception.
 const mockTCPPorts: Record<string, Row[]> = {};
+
+// Deploy webhook tokens, by app reference: made on first read, the way
+// every app is born with one, and replaced by a rotation.
+const mockDeployTokens: Record<string, string> = {};
+
+function mockToken(): string {
+  return Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join("");
+}
+
+function deployHook(reference: string, rotate = false) {
+  appOr404(reference);
+  if (rotate || !mockDeployTokens[reference]) mockDeployTokens[reference] = mockToken();
+  const token = mockDeployTokens[reference];
+  return { url: `https://${db.settings.domain}/hooks/deploy/${token}`, token };
+}
 
 function containers() {
   const at = new Date().toISOString();

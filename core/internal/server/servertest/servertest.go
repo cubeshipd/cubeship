@@ -160,17 +160,24 @@ func NewUnclaimed(t testing.TB, token setup.Token) *Fixture {
 // in, before anyone has been to the settings page.
 func NewUnconfigured(t testing.TB) *Fixture {
 	t.Helper()
-	return newFixture(t, noDocker{}, "")
+	return newFixture(t, noDocker{}, nil, "")
 }
 
 // NewWithDocker is New with a Docker client (usually a fake) wired into
 // the deploy orchestrator.
 func NewWithDocker(t testing.TB, docker app.DockerAPI) *Fixture {
 	t.Helper()
-	return newFixture(t, docker, Domain)
+	return newFixture(t, docker, nil, Domain)
 }
 
-func newFixture(t testing.TB, docker app.DockerAPI, domain string) *Fixture {
+// NewWithBuilder is NewWithDocker with a builder (usually a fake) too,
+// for a test where an app that builds is meant to deploy.
+func NewWithBuilder(t testing.TB, docker app.DockerAPI, builder app.ImageBuilder) *Fixture {
+	t.Helper()
+	return newFixture(t, docker, builder, Domain)
+}
+
+func newFixture(t testing.TB, docker app.DockerAPI, builder app.ImageBuilder, domain string) *Fixture {
 	t.Helper()
 	ctx := context.Background()
 	db := dbtest.New(t)
@@ -178,6 +185,7 @@ func newFixture(t testing.TB, docker app.DockerAPI, domain string) *Fixture {
 	dataDir := t.TempDir()
 	srv := server.New(db, docker, server.Options{
 		WebhookToken: WebhookToken, BuilderToken: BuilderToken, LocalRegistry: LocalRegistry, PullRegistry: LocalRegistry, DataDir: dataDir,
+		Builder: builder,
 	})
 	if domain != "" {
 		if err := srv.Settings.SeedFromEnv(ctx, map[string]string{settings.Domain: domain}); err != nil {

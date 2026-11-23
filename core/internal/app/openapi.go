@@ -40,7 +40,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 			Name:        "Apps",
 			Description: "A deployable service. Pushing a tag to an app's registry path is what deploys it; these endpoints register apps, configure them, and redeploy on demand.",
 		}},
-		Schemas: mergeSchemas(mergeSchemas(project.EnvSchemas(), metrics.Schemas()), map[string]*openapi.Schema{
+		Schemas: mergeSchemas(mergeSchemas(mergeSchemas(project.EnvSchemas(), metrics.Schemas()), deployHookSchemas()), map[string]*openapi.Schema{
 			"Deployment": openapi.Object(map[string]*openapi.Schema{
 				"id":          openapi.Integer("Poll this deploy at .../deployments/{id}."),
 				"status":      {Type: "string", Enum: []string{"pending", "succeeded", "failed", "skipped"}},
@@ -146,8 +146,14 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"port": openapi.Integer("What this name reaches inside the container. Omitted or 0 uses the app's only declared internal port, or 8080 when there are zero or multiple internal ports."),
 			}, "id", "host", "port"),
 		}),
-		Paths: appPaths(refParams, envRole, appPath),
+		Paths: mergePaths(appPaths(refParams, envRole, appPath), deployHookPaths(refParams, appPath)),
 	}
+}
+
+// mergePaths folds b into a and returns a.
+func mergePaths(a, b map[string]openapi.PathItem) map[string]openapi.PathItem {
+	maps.Copy(a, b)
+	return a
 }
 
 // arrayOf is openapi.Array with something to say about the list itself.

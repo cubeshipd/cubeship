@@ -54,6 +54,10 @@ type Service struct {
 	// in, which is a test.
 	portsChanged PortsChanged
 	hostPorts    HostPorts
+
+	// HookWait replaces HookWaitLimit when set. Tests use it, so a wait
+	// that runs out does not take fifteen minutes to.
+	HookWait time.Duration
 }
 
 // PortsChanged is told whenever what this module publishes on the host

@@ -270,6 +270,16 @@ Get one app by reference: its domain, registry push path, status, and which proj
 
 \* required
 
+### get_app_deploy_hook
+
+Read an app's deploy webhook: its url (null while the instance has no domain) and the token in it. Anyone holding the url can deploy the app, so treat it as a secret. POST to the url, with no credentials, to deploy the app: ?tag=x.y.z for an app that runs a published image (saved on an external or pinned app, so later deploys stay on it), ?ref=\<branch, tag or commit\> for one that builds, and ?wait=true to answer once the deploy has finished. Requires the member role, and the admin role for an app that builds.
+
+| Input | Type | What it is |
+| --- | --- | --- |
+| `app` * | string | app reference: project/environment/app, or project/app for production |
+
+\* required
+
 ### get_app_deployments
 
 List an app's recent deploys, newest first: whether each succeeded, and why it failed if it did. A deploy runs detached from the call that started it, so this is how you find out how one ended.
@@ -357,6 +367,16 @@ Roll an app back to an earlier deployment: deploys that deployment's image tag a
 | --- | --- | --- |
 | `app` * | string | app reference: project/environment/app, or project/app for production |
 | `deployment_id` * | integer | id of the earlier deployment to roll back to |
+
+\* required
+
+### rotate_app_deploy_hook
+
+Give an app's deploy webhook a new token and return the new url. The old url stops working at once, so every CI that used it has to be given the new one. POST to the url, with no credentials, to deploy the app: ?tag=x.y.z for an app that runs a published image (saved on an external or pinned app, so later deploys stay on it), ?ref=\<branch, tag or commit\> for one that builds, and ?wait=true to answer once the deploy has finished. Requires the member role, and the admin role for an app that builds.
+
+| Input | Type | What it is |
+| --- | --- | --- |
+| `app` * | string | app reference: project/environment/app, or project/app for production |
 
 \* required
 
@@ -615,7 +635,7 @@ List the backups of one of an app's volumes, newest first: when each was taken, 
 
 ### list_audit_events
 
-Read the audit log, newest first: who changed what, through the dashboard, the API or MCP, and every refused attempt. Filter by user, via (dashboard, api, mcp), outcome (ok, refused, failed) or target (e.g. an app's reference). Pass the returned next as before for older events. Requires the admin role.
+Read the audit log, newest first: who changed what, through the dashboard, the API, MCP or a deploy webhook, and every refused attempt. Filter by user, via (dashboard, api, mcp, webhook), outcome (ok, refused, failed) or target (e.g. an app's reference). Pass the returned next as before for older events. Requires the admin role.
 
 | Input | Type | What it is |
 | --- | --- | --- |
@@ -626,7 +646,7 @@ Read the audit log, newest first: who changed what, through the dashboard, the A
 | `target` | string | only events whose target contains this |
 | `to` | string | only events before this, in the same form |
 | `user` | string | only this username |
-| `via` | string | dashboard, api or mcp |
+| `via` | string | dashboard, api, mcp or webhook |
 
 \* required
 

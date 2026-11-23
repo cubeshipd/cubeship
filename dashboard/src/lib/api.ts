@@ -243,6 +243,13 @@ export type AppTCPPort = {
   created_at: string;
 };
 
+// The URL that deploys an app when something posts to it. url is null
+// while the instance has no domain; the token is the secret in it.
+export type DeployHook = {
+  url: string | null;
+  token: string;
+};
+
 export type AppHealthCheck = {
   path: string;
   port: number;
@@ -727,7 +734,7 @@ export type AuditEvent = {
   id: number;
   at: string;
   username: string;
-  via: "dashboard" | "api" | "mcp";
+  via: "dashboard" | "api" | "mcp" | "webhook";
   key_name?: string;
   /** The event in a sentence: "Deployed web/production/api". */
   summary: string;

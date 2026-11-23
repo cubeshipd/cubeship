@@ -4,7 +4,7 @@ description: Who changed what on the instance, through the dashboard, the API or
 ---
 
 Every change made on the instance is written down: who made it, through
-which door (`dashboard`, `api` or `mcp`), with which API key, what it
+which door (`dashboard`, `api`, `mcp` or `webhook`), with which API key, what it
 named, and how it ended. So is every attempt that was **refused** — a
 read included, so a key trying to read a secret it does not allow shows
 up.
@@ -29,7 +29,7 @@ the log is everybody's activity.
 | Column | What it is |
 | --- | --- |
 | `summary` | The event in a sentence: `Deployed web/production/api`, `Tried to read the variables of web`. |
-| `via` | `dashboard` (a session), `api` (an API key) or `mcp` (an API key, through `/mcp`). |
+| `via` | `dashboard` (a session), `api` (an API key), `mcp` (an API key, through `/mcp`) or `webhook` (an app's [deploy webhook](/docs/apps/deploys#the-deploy-webhook), by `deploy webhook`). |
 | `key_name` | The key, when one was used. |
 | `action` | The route, e.g. `POST /apps/{project}/{env}/{name}/deployments`, or `mcp deploy_app`. |
 | `target` | The path, or a tool's identifying arguments — `app=web/production/api`. |
