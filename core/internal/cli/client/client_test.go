@@ -161,6 +161,22 @@ func TestUnknownAppIsNotFound(t *testing.T) {
 	}
 }
 
+func TestClientReadsAndRotatesTheDeployHook(t *testing.T) {
+	c, _ := connect(t)
+	ctx := context.Background()
+	if _, err := c.CreateApp(ctx, "api", "web", "", "", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	hook, err := c.DeployHook(ctx, "web/production/api")
+	if err != nil || len(hook.Token) != 64 || !strings.HasSuffix(hook.URL, "/hooks/deploy/"+hook.Token) {
+		t.Fatalf("DeployHook: %+v %v", hook, err)
+	}
+	rotated, err := c.RotateDeployHook(ctx, "web/production/api")
+	if err != nil || rotated.Token == hook.Token || !strings.HasSuffix(rotated.URL, rotated.Token) {
+		t.Fatalf("RotateDeployHook: %+v %v", rotated, err)
+	}
+}
+
 // A name the daemon would never route must not be able to reach some
 // other endpoint by escaping its path segment.
 func TestPathSegmentsAreEscaped(t *testing.T) {

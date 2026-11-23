@@ -82,6 +82,26 @@ func (c *Client) Deployments(ctx context.Context, ref string) ([]Deployment, err
 		appPath(ref)+"/deployments", nil, http.StatusOK, DefaultTimeout)
 }
 
+// DeployHook is an app's deploy webhook: the URL that deploys it when
+// something posts to it. URL is empty while the instance has no domain.
+type DeployHook struct {
+	URL   string `json:"url"`
+	Token string `json:"token"`
+}
+
+// DeployHook reads an app's deploy webhook.
+func (c *Client) DeployHook(ctx context.Context, ref string) (DeployHook, error) {
+	return request[DeployHook](ctx, c, "read deploy webhook", http.MethodGet,
+		appPath(ref)+"/deploy-hook", nil, http.StatusOK, DefaultTimeout)
+}
+
+// RotateDeployHook gives an app's webhook a new token; the old URL stops
+// working at once.
+func (c *Client) RotateDeployHook(ctx context.Context, ref string) (DeployHook, error) {
+	return request[DeployHook](ctx, c, "regenerate deploy webhook", http.MethodPost,
+		appPath(ref)+"/deploy-hook/rotate", nil, http.StatusOK, DefaultTimeout)
+}
+
 func (c *Client) AppEnv(ctx context.Context, ref string) (EnvVars, error) {
 	return request[EnvVars](ctx, c, "read app env", http.MethodGet,
 		appPath(ref)+"/env", nil, http.StatusOK, DefaultTimeout)
