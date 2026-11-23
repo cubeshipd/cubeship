@@ -74,7 +74,10 @@ post one at a time, or `wait=true`, when the order matters.
 URL is being able to: a member for an app that runs an image, an admin
 for one that builds. **Regenerate** gives it a new token and the old URL
 stops working at once — the answer to a URL that leaked, at the cost of
-handing every CI that used it the new one.
+handing every CI that used it the new one. Changing an app to a source
+that builds regenerates it too, with the change: a URL a member read
+while the app ran an image would otherwise build whatever `ref` its
+holder named.
 
 ```bash
 cubeship app hook shop/api           # print the URL

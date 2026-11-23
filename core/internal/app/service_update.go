@@ -278,7 +278,26 @@ func (s *Service) UpdateWithPredeploy(ctx context.Context, caller *user.User, re
 		}
 	}
 
-	if _, err := s.Repo().Update(ctx, a.ID, source, origin, health, limits, auto, predeploy); err != nil {
+	// The deploy webhook was handed out under the role the old source
+	// needed. An app that starts building needs more, and a token a
+	// member read while it ran an image would otherwise go on to build
+	// whatever ref its holder names. So it is replaced, with the source,
+	// in one transaction: there is no moment at which the app builds and
+	// the old token still works.
+	raises := source != nil && RoleToDeploy(*source) != RoleToDeploy(Source(a.Source)) &&
+		RoleToDeploy(*source) == user.RoleAdmin
+	if err := s.db.WithTx(ctx, func(tx database.Queryer) error {
+		repo := NewRepository(tx)
+		if _, err := repo.Update(ctx, a.ID, source, origin, health, limits, auto, predeploy); err != nil {
+			return err
+		}
+		if raises {
+			if _, err := repo.RotateDeployToken(ctx, a.ID); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
 		return nil, err
 	}
 	if health != nil {

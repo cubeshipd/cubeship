@@ -273,3 +273,30 @@ func TestAMemberCannotSeeTheHookOfABuildingApp(t *testing.T) {
 	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/apps/"+built.Reference+"/deploy-hook/rotate", nil, member), http.StatusForbidden)
 	servertest.RequireStatus(t, f.Do(t, http.MethodGet, "/apps/"+image+"/deploy-hook", nil, ""), http.StatusUnauthorized)
 }
+
+// A token a member read while the app ran an image must not go on to
+// build whatever ref its holder names once an admin makes it build.
+func TestTheHookTokenIsReplacedWhenTheAppStartsBuilding(t *testing.T) {
+	f := servertest.New(t)
+	_, member := f.AddMember(t, "member", user.RoleMember)
+	ref := createExternal(t, f, member, "api")
+	old := readHook(t, f, member, ref)
+
+	servertest.RequireStatus(t, f.Do(t, http.MethodPatch, "/apps/"+ref, map[string]string{
+		"source": "dockerfile", "repo": "https://github.com/acme/api.git",
+	}, f.AdminKey), http.StatusOK)
+
+	servertest.RequireStatus(t, postHook(t, f, old.Token, "?ref=main", ""), http.StatusNotFound)
+	if now := readHook(t, f, f.AdminKey, ref); now.Token == old.Token || len(now.Token) != 64 {
+		t.Errorf("the token is %q after the app started building, was %q", now.Token, old.Token)
+	}
+
+	// Moving between two building sources needs no more than it had.
+	before := readHook(t, f, f.AdminKey, ref)
+	servertest.RequireStatus(t, f.Do(t, http.MethodPatch, "/apps/"+ref, map[string]string{
+		"source": "railpack", "repo": "https://github.com/acme/api.git",
+	}, f.AdminKey), http.StatusOK)
+	if after := readHook(t, f, f.AdminKey, ref); after.Token != before.Token {
+		t.Error("the token changed between two sources that need the same role")
+	}
+}

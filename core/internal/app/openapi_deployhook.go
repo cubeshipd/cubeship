@@ -12,7 +12,7 @@ const deployHookDoc = "\n\n**Calling it.** `POST <url>` with no credentials — 
 	"- `wait` — `true` answers once the deploy has finished, with `200`, instead of `202` as soon as it is accepted. A failed deploy is still `200`: read `status`. The wait is capped at 15 minutes: a deploy still running then is answered `202` with its current `status`, and carries on. Read as a boolean (`true`, `1`, `false`, `0`, …); anything else is `400`.\n\n" +
 	"The answer is `{id, status, app, tag | ref, error}`. A tag sent to an app that builds, a ref sent to one that does not, or either malformed, is `400`; a ref holds no spaces, `:`, `#`, `,`, `..` or `@{`, and does not start with a dash. A token that names no app is a plain `404`, the same as any address nothing is served at. Each call is in the audit log, by `deploy webhook`, via `webhook`."
 
-const deployHookRole = "\n\nRequires the member role, and the admin role for an app that **builds** — the same as deploying it, because holding the URL is being able to."
+const deployHookRole = "\n\nRequires the member role, and the admin role for an app that **builds** — the same as deploying it, because holding the URL is being able to. An app changed to a source that builds gets a new token with that change, so a URL read under the member role stops working."
 
 func deployHookPaths(refParams []openapi.Parameter, appPath string) map[string]openapi.PathItem {
 	responses := openapi.Responses{
