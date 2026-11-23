@@ -33,6 +33,7 @@ const VIA = [
   { value: "dashboard", label: "Dashboard" },
   { value: "api", label: "API" },
   { value: "mcp", label: "MCP" },
+  { value: "webhook", label: "Deploy webhook" },
 ];
 
 const OUTCOMES = [
