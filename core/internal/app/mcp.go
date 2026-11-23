@@ -124,6 +124,7 @@ func (t *Tools) Register(srv *mcp.Server) {
 		OutputSchema: appToolSchema[Response](),
 		Description:  "Set an app's internal container ports and readiness health checks. Every check must pass before a new container is ready. Requires the member role.",
 	}, t.configureNetworking)
+	t.registerDeployHook(srv)
 }
 
 // Command inputs keep raw JSON to distinguish omission from an explicit clear.

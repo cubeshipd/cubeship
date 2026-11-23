@@ -15,7 +15,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"id":       openapi.Integer("Pass as `before` to read what came earlier."),
 				"at":       openapi.String("RFC 3339."),
 				"username": openapi.String("Who. Kept after the account is deleted."),
-				"via":      {Type: "string", Enum: []string{"dashboard", "api", "mcp"}, Description: "The door."},
+				"via":      {Type: "string", Enum: []string{"dashboard", "api", "mcp", "webhook"}, Description: "The door. `webhook` is an app's deploy webhook, which nobody signs in to."},
 				"key_name": openapi.String("The API key, when one was used."),
 				"summary":  openapi.String("The event in a sentence, e.g. `Deployed web/production/api` or `Tried to read the variables of web/production/api`."),
 				"action":   openapi.String("The route pattern, e.g. `POST /apps/{project}/{env}/{name}/deployments`, or `mcp <tool>`."),
@@ -39,7 +39,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					Tags:        []string{"Audit"},
 					Parameters: []openapi.Parameter{
 						openapi.QueryParam("user", "Only this username."),
-						openapi.QueryParam("via", "`dashboard`, `api` or `mcp`."),
+						openapi.QueryParam("via", "`dashboard`, `api`, `mcp` or `webhook`."),
 						openapi.QueryParam("outcome", "`ok`, `refused` or `failed`."),
 						openapi.QueryParam("target", "Only events whose target contains this, e.g. an app's reference."),
 						openapi.QueryParam("from", "Only events at or after this: RFC 3339, or YYYY-MM-DD for midnight UTC."),

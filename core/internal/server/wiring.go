@@ -157,7 +157,8 @@ func (s *Server) routes() {
 	s.githubHandler.Routes(s.router, auth)
 	bitbucket.NewHandler(s.Bitbucket, s.Apps).Routes(s.router, auth)
 	gitremote.NewHandler(s.GitRemotes, s.Apps).Routes(s.router, auth)
-	app.NewHandler(s.Apps).Routes(s.router, auth)
+	apps := app.NewHandler(s.Apps)
+	apps.Routes(s.router, auth)
 	datastore.NewHandler(s.Datastores).Routes(s.router, auth)
 	objectstore.NewHandler(s.ObjectStores).Routes(s.router, auth)
 	templateinstall.NewHandler(s.Templates).Routes(s.router, auth)
@@ -183,6 +184,9 @@ func (s *Server) routes() {
 	s.githubHandler.WebhookRoutes(s.router)
 	bitbucket.NewHandler(s.Bitbucket, s.Apps).WebhookRoutes(s.router)
 	gitremote.NewHandler(s.GitRemotes, s.Apps).WebhookRoutes(s.router)
+	// An app's deploy webhook, whose token is its whole credential. It
+	// writes its own audit event: no person is signed in to record.
+	apps.WebhookRoutes(s.router, s.Audit)
 
 	// Authenticated Streamable HTTP: every method the MCP handler
 	// accepts goes through the same key middleware. POST carries

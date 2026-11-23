@@ -4,7 +4,9 @@
 // It records at the two doors rather than inside each module, so a
 // route or a tool added later is recorded without anybody remembering
 // to. What it cannot see is what no person asked for in that request —
-// a push webhook's deploy, a scheduled backup.
+// a push webhook's deploy, a scheduled backup. An app's deploy webhook
+// is the exception that writes itself down, as ViaWebhook: its URL is a
+// credential somebody handed out, and what it did is worth knowing.
 package audit
 
 import (
@@ -21,6 +23,9 @@ const (
 	ViaDashboard Via = "dashboard"
 	ViaAPI       Via = "api"
 	ViaMCP       Via = "mcp"
+	// ViaWebhook is a deploy webhook: nobody signed in, the URL's token
+	// was the whole authorization.
+	ViaWebhook Via = "webhook"
 )
 
 // Outcome is how it ended.

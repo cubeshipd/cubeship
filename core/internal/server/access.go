@@ -57,6 +57,8 @@ var toolRules = map[string]toolRule{
 	"get_app_deployments":      tool(user.ResApps, user.LevelView),
 	"cancel_app_deployment":    tool(user.ResApps, user.LevelManage),
 	"rollback_app":             tool(user.ResApps, user.LevelManage),
+	"get_app_deploy_hook":      tool(user.ResApps, user.LevelManage),
+	"rotate_app_deploy_hook":   tool(user.ResApps, user.LevelManage),
 	"update_app":               tool(user.ResApps, user.LevelManage),
 	"configure_app_networking": tool(user.ResApps, user.LevelManage),
 	"delete_app":               tool(user.ResApps, user.LevelManage),
