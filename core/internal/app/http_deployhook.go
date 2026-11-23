@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 
 	"cubeship/internal/audit"
@@ -79,32 +82,25 @@ func (h *Handler) WebhookRoutes(r *httpx.Router, rec Recorder) {
 	})
 }
 
+// hookBodyLimit is how much of a webhook's body is read before it is
+// thrown away.
+const hookBodyLimit = 1 << 20
+
 func (h *Handler) hook(w http.ResponseWriter, r *http.Request, rec Recorder) {
-	// The query wins over the body, field by field, so a curl with
-	// ?tag= overrides whatever a CI template sends.
-	var req struct {
-		Tag  string `json:"tag"`
-		Ref  string `json:"ref"`
-		Wait bool   `json:"wait"`
-	}
-	if r.ContentLength != 0 {
-		if err := httpx.DecodeJSON(r, &req); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-	}
-	q := r.URL.Query()
-	if q.Has("tag") {
-		req.Tag = q.Get("tag")
-	}
-	if q.Has("ref") {
-		req.Ref = q.Get("ref")
-	}
-	if q.Has("wait") {
-		req.Wait = q.Get("wait") == "true"
+	// The body is never read for what it says. GitHub, Docker Hub and
+	// every other sender post a JSON document of their own, whatever
+	// the URL is for, and a hook that parsed it would either refuse
+	// them or take one of their fields for one of ours. It is drained,
+	// within a bound, so the connection can be reused.
+	io.Copy(io.Discard, io.LimitReader(r.Body, hookBodyLimit))
+
+	req, err := hookRequestFrom(r.URL.Query())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 
-	result, err := h.svc.DeployFromHook(r.Context(), r.PathValue("token"), HookRequest{Tag: req.Tag, Ref: req.Ref, Wait: req.Wait})
+	result, err := h.svc.DeployFromHook(r.Context(), r.PathValue("token"), req)
 	if result == nil {
 		// An unknown token, answered as any other address nothing is
 		// served at, and not recorded: it names no app to record it
@@ -140,6 +136,30 @@ func (h *Handler) hook(w http.ResponseWriter, r *http.Request, rec Recorder) {
 		ID: d.ID, Status: d.Status, App: result.App.String(),
 		Tag: result.Tag, Ref: result.Ref, Error: d.Error,
 	})
+}
+
+// hookRequestFrom reads the query string. A key it does not know is
+// refused rather than ignored: ?tags=1.2.3 would otherwise deploy the
+// tag the app is already on and answer as if it had done what was asked.
+func hookRequestFrom(q url.Values) (HookRequest, error) {
+	var req HookRequest
+	for key := range q {
+		switch key {
+		case "tag":
+			req.Tag = q.Get(key)
+		case "ref":
+			req.Ref = q.Get(key)
+		case "wait":
+			wait, err := strconv.ParseBool(q.Get(key))
+			if err != nil {
+				return HookRequest{}, fmt.Errorf("wait is true or false, not %q", q.Get(key))
+			}
+			req.Wait = wait
+		default:
+			return HookRequest{}, fmt.Errorf("unknown parameter %q: the webhook takes tag, ref and wait", key)
+		}
+	}
+	return req, nil
 }
 
 func hookVersion(r *HookResult) string {

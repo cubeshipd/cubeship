@@ -5,7 +5,9 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"log"
 	"strings"
+	"time"
 	"unicode"
 
 	"cubeship/internal/settings"
@@ -51,14 +53,28 @@ type HookResult struct {
 var ErrRefNotAllowed = errors.New("only a building app names a ref; an app that runs a published image names a tag")
 
 // ErrInvalidRef reports a ref no Git repository could hold.
-var ErrInvalidRef = errors.New("a ref is a branch, tag or commit: no spaces, not starting with a dash, up to 255 characters")
+var ErrInvalidRef = errors.New(`a ref is a branch, tag or commit: up to 255 characters, not starting with a dash, without spaces, ":", "#", ",", ".." or "@{"`)
+
+// HookWaitLimit is how long a webhook call with wait=true holds the
+// answer. The route has no login, so a wait of its own length would be
+// a connection anyone holding a URL could keep open for the life of a
+// build.
+const HookWaitLimit = 15 * time.Minute
 
 // ValidRef is a light check on a branch, tag or commit: the builder is
 // the judge of whether it exists, but a ref that starts with a dash is
 // an option to whatever reads it, and a space or a control character is
 // never part of one.
+//
+// The rest is what the ref is pasted into. BuildKit reads a Git context
+// as `repo#<ref>:<dir>`, so a ":" moves the build into another
+// directory of the repository and a "#" or "," starts another part of
+// the fragment; ".." and "@{" are what Git itself refuses in a name.
 func ValidRef(ref string) bool {
 	if ref == "" || len(ref) > 255 || strings.HasPrefix(ref, "-") {
+		return false
+	}
+	if strings.ContainsAny(ref, ":#,") || strings.Contains(ref, "..") || strings.Contains(ref, "@{") {
 		return false
 	}
 	return !strings.ContainsFunc(ref, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) })
@@ -134,11 +150,18 @@ func (s *Service) DeployFromHook(ctx context.Context, token string, req HookRequ
 		return nil, ErrNotFound
 	}
 	if err != nil {
+		// Neither error names the token, so the log never holds one.
+		log.Printf("deploy webhook: %v", err)
 		return nil, err
 	}
 	a, err := s.Repo().ScopedByID(ctx, id)
-	if err != nil {
+	if errors.Is(err, sql.ErrNoRows) {
+		// Deleted between the two reads.
 		return nil, ErrNotFound
+	}
+	if err != nil {
+		log.Printf("deploy webhook: %v", err)
+		return nil, err
 	}
 	result, err := s.deployFromHook(ctx, a, req)
 	if result == nil {
@@ -205,6 +228,8 @@ func (s *Service) deployFromHook(ctx context.Context, a *Scoped, req HookRequest
 	if req.Wait {
 		// A wait that runs out hands back where the deploy had got to,
 		// with the context's error; the deploy itself carries on.
+		ctx, cancel := context.WithTimeout(ctx, cmp.Or(s.HookWait, HookWaitLimit))
+		defer cancel()
 		done, err := s.orch.WaitFor(ctx, a.ID, d.ID)
 		if done != nil {
 			result.Deployment = done

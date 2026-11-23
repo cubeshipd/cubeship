@@ -35,9 +35,14 @@ func readHook(t *testing.T, f *servertest.Fixture, key, ref string) deployHook {
 // postHook calls the webhook the way a CI does: no key, at the root.
 func postHook(t *testing.T, f *servertest.Fixture, token, query, body string) *httptest.ResponseRecorder {
 	t.Helper()
+	return postHookAs(t, f, token, query, "application/json", body)
+}
+
+func postHookAs(t *testing.T, f *servertest.Fixture, token, query, contentType, body string) *httptest.ResponseRecorder {
+	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, "/hooks/deploy/"+token+query, strings.NewReader(body))
 	if body != "" {
-		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Content-Type", contentType)
 	}
 	return f.Serve(t, req)
 }
@@ -109,7 +114,7 @@ func TestTheHookSavesTheTagOfAnExternalApp(t *testing.T) {
 	ref := createExternal(t, f, f.AdminKey, "api")
 	hook := readHook(t, f, f.AdminKey, ref)
 
-	// The query wins over the body.
+	// A body is whatever the sender posts, and never one of ours.
 	rec := postHook(t, f, hook.Token, "?tag=1.2.3&wait=true", `{"tag":"0.0.1"}`)
 	servertest.RequireStatus(t, rec, http.StatusOK)
 	var got hookDeploy
@@ -131,8 +136,7 @@ func TestTheHookSavesTheTagOfAnExternalApp(t *testing.T) {
 		t.Errorf("the app's tag is %q, want the one the hook sent", app.Tag)
 	}
 
-	// The body alone works too.
-	servertest.RequireStatus(t, postHook(t, f, hook.Token, "", `{"tag":"1.2.4"}`), http.StatusAccepted)
+	servertest.RequireStatus(t, postHook(t, f, hook.Token, "?tag=1.2.4", ""), http.StatusAccepted)
 
 	var page struct {
 		Events []struct {
@@ -208,6 +212,13 @@ func TestTheHookRefusesWhatTheAppCannotRun(t *testing.T) {
 		{"ref on an image", imageHook.Token, "?ref=main", "names a ref"},
 		{"tag on a build", builtHook.Token, "?tag=1.2.3", "names a tag"},
 		{"malformed ref", builtHook.Token, "?ref=--upload-pack=x", "a ref is"},
+		// BuildKit reads `repo#<ref>:<dir>`: a colon would build another
+		// directory, a # or a comma another part of the fragment.
+		{"ref with a directory", builtHook.Token, "?ref=main:outro/dir", "a ref is"},
+		{"ref with a fragment", builtHook.Token, "?ref=a%23b", "a ref is"},
+		{"ref with a comma", builtHook.Token, "?ref=a,b", "a ref is"},
+		{"ref climbing", builtHook.Token, "?ref=a..b", "a ref is"},
+		{"ref with a reflog", builtHook.Token, "?ref=main@%7B1%7D", "a ref is"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			rec := postHook(t, f, tc.token, tc.query, "")

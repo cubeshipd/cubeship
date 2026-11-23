@@ -38,17 +38,23 @@ no app is a plain 404, the same as any address nothing is served at.
 Only `POST` deploys; a `GET` would deploy whenever a chat previewed the
 link.
 
-What it takes goes in the query string, or as the same fields of a JSON
-body; the query wins.
+What it takes goes in the query string, and only there. A body, of any
+content type, is read and ignored, so GitHub, Docker Hub or any other
+sender can post its own payload to the URL. A parameter the webhook does
+not take — `?tags=1.2.3` — is refused with `400`, naming it, rather
+than deploying the tag the app is already on.
 
 | Parameter | For | What it does |
 | --- | --- | --- |
 | `tag` | an app that runs a published image | Deploys that tag. On an [external](/docs/apps/source-external) app, or a [registry](/docs/apps/source-registry#which-tag-runs) one pinned to a tag, the tag is **saved**, as if it were typed on the settings screen, so the next deploy from anywhere stays on it. On a registry app that follows pushes it is deployed and not saved, so autodeploy stays on. |
 | `ref` | an app that [builds](/docs/apps/source-git) | The branch, tag or commit for this one deploy. Not saved. |
-| `wait` | any | `true` answers once the deploy has finished, `200`, instead of `202` as soon as it is accepted. A deploy that failed is still `200`: read `status`. |
+| `wait` | any | `true` answers once the deploy has finished, `200`, instead of `202` as soon as it is accepted. A deploy that failed is still `200`: read `status`. The wait stops at 15 minutes: a deploy still running then is answered `202` with its current `status`, and carries on. Read as a boolean — `true`, `1`, `false`, `0` — and anything else is `400`. |
 
 A `tag` sent to an app that builds, a `ref` sent to one that does not,
-or either malformed, is refused with `400` and the reason. The answer is
+or either malformed, is refused with `400` and the reason. A ref has no
+spaces, `:`, `#`, `,`, `..` or `@{`, and does not start with a dash:
+the builder reads `repo#<ref>:<dir>`, so those would name something
+other than a branch, tag or commit. The answer is
 short on purpose — what a CI log needs, and nothing it should not keep:
 
 ```json
@@ -58,6 +64,11 @@ short on purpose — what a CI log needs, and nothing it should not keep:
 A stopped app is started, as a deploy from the dashboard would. Each
 call is in the [audit log](/docs/users/audit), by **deploy webhook**, via
 `webhook` — the app, the deployment and the tag, never the token.
+
+Two calls with different tags that arrive together each deploy their
+own, one after the other, but the tag saved on the app is whichever was
+written last, which need not be the one that deployed last. Have a CI
+post one at a time, or `wait=true`, when the order matters.
 
 **Who sees it** is whoever could deploy the app, because holding the
 URL is being able to: a member for an app that runs an image, an admin
