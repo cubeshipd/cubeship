@@ -364,6 +364,12 @@ func (o *Orchestrator) WaitFor(ctx context.Context, appID, deploymentID int64) (
 	for {
 		d, err := o.apps.DeploymentByID(ctx, appID, deploymentID)
 		if err != nil {
+			// A read cut short by the wait ending is the wait ending, not
+			// a deployment that has gone: answering 404 for it would tell
+			// whoever was watching that the deploy they started failed.
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
 			return nil, ErrDeploymentNotFound
 		}
 		if d.Done() {

@@ -481,9 +481,10 @@ func (h *Handler) deployment(w http.ResponseWriter, r *http.Request) {
 	var d *Deployment
 	if r.URL.Query().Get("wait") == "true" {
 		d, err = h.svc.WaitForDeployment(ctx, caller, ref, id)
-		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		if d != nil && (errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled)) {
 			// The wait ran out, not the deploy. Hand back where it had
-			// got to and let the caller ask again.
+			// got to and let the caller ask again. With no row read
+			// before it did, there is nothing to hand back.
 			httpx.WriteJSON(w, http.StatusOK, toDeploymentResponse(d))
 			return
 		}
