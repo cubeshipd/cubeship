@@ -174,6 +174,32 @@ Show one app, including its registry push path
 cubeship app get <app>
 ```
 
+## cubeship app hook
+
+Print an app's deploy webhook.
+
+Every app has one. POST to it — no API key, the token in the
+URL is the authorization, so keep it secret — and the app
+deploys. An app that runs a published image takes ?tag=1.2.3,
+which an external app saves; one that builds takes ?ref=main.
+?wait=true answers once the deploy has finished.
+
+```bash
+cubeship app hook <app>
+```
+
+## cubeship app hook rotate
+
+Give an app's deploy webhook a new URL; the old one stops working
+
+```bash
+cubeship app hook rotate <app> [flags]
+```
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--yes` |  | confirm that the old URL should stop working |
+
 ## cubeship app limits
 
 Cap how much of a machine one copy of an app may take.

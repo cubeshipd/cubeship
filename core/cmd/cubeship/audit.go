@@ -60,7 +60,7 @@ func newAuditCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&f.User, "user", "", "only this username")
-	cmd.Flags().StringVar(&f.Via, "via", "", "dashboard, api or mcp")
+	cmd.Flags().StringVar(&f.Via, "via", "", "dashboard, api, mcp or webhook")
 	cmd.Flags().StringVar(&f.Outcome, "outcome", "", "ok, refused or failed")
 	cmd.Flags().StringVar(&f.Target, "target", "", "only events whose target contains this, e.g. an app's reference")
 	cmd.Flags().StringVar(&f.From, "from", "", "only events at or after this: YYYY-MM-DD (midnight UTC) or RFC 3339")

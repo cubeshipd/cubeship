@@ -1,6 +1,6 @@
 ---
 title: An image from anywhere
-description: Docker Hub, GHCR, ECR, DigitalOcean — anything you already publish to. Nothing tells Cubeship when you push there, so a deploy is something you ask for.
+description: Docker Hub, GHCR, ECR, DigitalOcean — anything you already publish to. Nothing tells Cubeship when you push there, so the CI that pushed says so, through the app's deploy webhook.
 ---
 
 An external app pulls an image from a registry Cubeship does not run.
@@ -27,8 +27,19 @@ Set a tag on the app to pin it, the same way a
 
 Nothing notifies Cubeship when an image lands on Docker Hub. A deploy is
 something you ask for — from the dashboard, with `cubeship app deploy`,
-or through the `deploy_app` tool, which is exactly what a CI job does
-after it pushes.
+or through the `deploy_app` tool.
+
+A CI job asks with the app's [deploy webhook](/docs/apps/deploys#the-deploy-webhook),
+which needs no API key and saves the tag it is given, so the next
+deploy from anywhere stays on the image the CI just published:
+
+```bash
+docker push ghcr.io/acme/api:1.2.3
+curl -fsS -X POST "$CUBESHIP_DEPLOY_HOOK?tag=1.2.3&wait=true"
+```
+
+`cubeship app hook shop/api` prints the URL to store as the CI's
+`CUBESHIP_DEPLOY_HOOK` secret.
 
 ## Public images
 

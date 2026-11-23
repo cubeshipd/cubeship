@@ -12,13 +12,67 @@ or failed — when it ends.
 Nothing that asks for a deploy holds it up. `POST …/deploy` answers 202
 with the deployment row and the work carries on: a client that times
 out, hangs up or presses Ctrl-C stops *waiting*, not deploying. The push
-webhook and a GitHub delivery go through the same door.
+webhook, a GitHub delivery and the [deploy webhook](#the-deploy-webhook)
+go through the same door.
 
 How it went lives in the row, because nobody is on the connection to be
 told. The dashboard polls it; `cubeship app deploy` waits on it and
 prints the outcome; `?wait=true` does the same over HTTP; the
 `deploy_app` tool waits and, if the call times out first, tells you to
 check with `get_app_deployments`.
+
+## The deploy webhook
+
+Every app has a URL that deploys it when something posts to it, made
+with the app and shown on its Settings tab under **Deploy webhook**:
+
+```bash
+curl -X POST "https://cubeship.example.com/hooks/deploy/<token>?tag=1.2.3"
+```
+
+It is for a CI that has no other way to say there is something new —
+one that pushes to GHCR or Docker Hub, which tell Cubeship nothing.
+There are no credentials: **the token is the authorization**, so the
+URL is a secret, kept where the CI keeps its others. A token that names
+no app is a plain 404, the same as any address nothing is served at.
+Only `POST` deploys; a `GET` would deploy whenever a chat previewed the
+link.
+
+What it takes goes in the query string, or as the same fields of a JSON
+body; the query wins.
+
+| Parameter | For | What it does |
+| --- | --- | --- |
+| `tag` | an app that runs a published image | Deploys that tag. On an [external](/docs/apps/source-external) app, or a [registry](/docs/apps/source-registry#which-tag-runs) one pinned to a tag, the tag is **saved**, as if it were typed on the settings screen, so the next deploy from anywhere stays on it. On a registry app that follows pushes it is deployed and not saved, so autodeploy stays on. |
+| `ref` | an app that [builds](/docs/apps/source-git) | The branch, tag or commit for this one deploy. Not saved. |
+| `wait` | any | `true` answers once the deploy has finished, `200`, instead of `202` as soon as it is accepted. A deploy that failed is still `200`: read `status`. |
+
+A `tag` sent to an app that builds, a `ref` sent to one that does not,
+or either malformed, is refused with `400` and the reason. The answer is
+short on purpose — what a CI log needs, and nothing it should not keep:
+
+```json
+{"id": 42, "status": "pending", "app": "shop/production/api", "tag": "1.2.3"}
+```
+
+A stopped app is started, as a deploy from the dashboard would. Each
+call is in the [audit log](/docs/users/audit), by **deploy webhook**, via
+`webhook` — the app, the deployment and the tag, never the token.
+
+**Who sees it** is whoever could deploy the app, because holding the
+URL is being able to: a member for an app that runs an image, an admin
+for one that builds. **Regenerate** gives it a new token and the old URL
+stops working at once — the answer to a URL that leaked, at the cost of
+handing every CI that used it the new one.
+
+```bash
+cubeship app hook shop/api           # print the URL
+cubeship app hook rotate shop/api --yes
+```
+
+Over MCP they are `get_app_deploy_hook` and `rotate_app_deploy_hook`.
+While the instance has no domain there is no public address to give:
+the token is there, and the URL is null until one is set.
 
 ## What a deploy does
 
